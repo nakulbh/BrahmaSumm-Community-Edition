@@ -51,72 +51,82 @@ class Summarizer:
         :param source: The source document (URL or file path)
         :return: A dictionary containing the final summary, analysis, UMAP cluster details, and themes.
         """
-        # Step 1: Load the document
-        logger.info("Loading document...")
-        doc_loader = DocumentLoader(source,type)
-        text = doc_loader()
+        try:
+            # Step 1: Load the document
+            logger.info("Loading document...")
+            doc_loader = DocumentLoader(source,type)
+            text = doc_loader()
 
-        # Step 2: Preprocess and chunk the document
-        logger.info("Chunking text...")
-        self.processed_text = self.chunk_manager.preprocess_text(text)
-        self.chunk_manager.flexible_chunk(self.processed_text)
-        chunks = self.chunk_manager.get_chunks()
+            # Step 2: Preprocess and chunk the document
+            logger.info("Chunking text...")
+            self.processed_text = self.chunk_manager.preprocess_text(text)
+            self.chunk_manager.flexible_chunk(self.processed_text)
+            chunks = self.chunk_manager.get_chunks()
 
-        # Step 3: Embed the document and run clustering
-        logger.info("Embedding and clustering...")
-        self.cluster_manager.embed_documents_with_progress(chunks)
-        labels, cluster_centers = self.cluster_manager.cluster_document()
-        logger.info(f"Number of clusters: {len(cluster_centers)}")
+            # Step 3: Embed the document and run clustering
+            logger.info("Embedding and clustering...")
+            self.cluster_manager.embed_documents_with_progress(chunks)
+            labels, cluster_centers = self.cluster_manager.cluster_document()
+            logger.info(f"Number of clusters: {len(cluster_centers)}")
 
-        # Step 4: Find representatives and themes for each cluster
-        representatives = self.cluster_manager.find_n_closest_representatives()
-        logger.info("Finding themes for each cluster...")
-        themes, cluster_content = self.find_themes_for_clusters_slow(chunks, representatives)
-        
-      
-        # Step 5: Generate UMAP visualization
-        logger.info("Creating the visualization...")
-        #print("Labels:", labels)
-        #print("Themes keys:", themes.keys())
-        
-        self.visualizer.plot_clusters_with_umap(
-            self.cluster_manager.vectors, 
-            themes, 
-            labels, 
-            n_neighbors=25, 
-            min_dist=0.001, 
-            spread=0.8, 
-            length=12, 
-            width=8, 
-            output_image='reports/umap_clusters.png'
-        )
+            # Step 4: Find representatives and themes for each cluster
+            representatives = self.cluster_manager.find_n_closest_representatives()
+            logger.info("Finding themes for each cluster...")
+            themes, cluster_content = self.find_themes_for_clusters_slow(chunks, representatives)
+            
+          
+            # Step 5: Generate UMAP visualization
+            logger.info("Creating the visualization...")
+            #print("Labels:", labels)
+            #print("Themes keys:", themes.keys())
+            
+            self.visualizer.plot_clusters_with_umap(
+                self.cluster_manager.vectors, 
+                themes, 
+                labels, 
+                n_neighbors=25, 
+                min_dist=0.001, 
+                spread=0.8, 
+                length=12, 
+                width=8, 
+                output_image='reports/umap_clusters.png'
+            )
 
-        # Step 6: Generate the final summary using LLM
-        logger.info("Creating the final summary...")
-        self.combined_content = " ".join(cluster_content.values())
-        prompt = self.prompts['create_summary_prompt'].format(combined_content=self.combined_content)
-        
-        final_summary = self.model_manager.llm.invoke(prompt).content
-      
-        # Step 7: Perform analysis on the document
-        chunk_words, total_chunks, total_words, total_tokens, tokens_sent_tokens = self.get_analysis()
+            # Step 6: Generate the final summary using LLM with safe invocation
+            logger.info("Creating the final summary...")
+            self.combined_content = " ".join(cluster_content.values())
+            prompt = self.prompts['create_summary_prompt'].format(
+                combined_content=self.combined_content
+            )
+            
+            final_summary = self.model_manager.safe_invoke(prompt)
+            
+            # Step 7: Perform analysis on the document
+            chunk_words, total_chunks, total_words, total_tokens, tokens_sent_tokens = self.get_analysis()
 
-        # Step 8: Populate the data dictionary
-        data = {
-            'summary': final_summary,
-            'labels': labels,
-            'chunk_words': chunk_words,
-            'total_chunks': total_chunks,
-            'total_words': total_words,
-            'total_tokens': total_tokens,
-            'tokens_sent_tokens': tokens_sent_tokens,
-            'themes': themes,
-            'umap_image_path': 'reports/umap_clusters.png'
-        }
-        
-        
+            # Step 8: Populate the data dictionary
+            data = {
+                'summary': final_summary,
+                'labels': labels,
+                'chunk_words': chunk_words,
+                'total_chunks': total_chunks,
+                'total_words': total_words,
+                'total_tokens': total_tokens,
+                'tokens_sent_tokens': tokens_sent_tokens,
+                'themes': themes,
+                'umap_image_path': 'reports/umap_clusters.png'
+            }
+            
+            
 
-        return data
+            return data
+            
+        except Exception as e:
+            logger.error(f"Error in summarizer: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Summarization failed: {str(e)}"
+            )
 
     def get_analysis(self):
         """
@@ -248,4 +258,13 @@ async def summarize_content(request: SummaryRequest):
             "data": data
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Summarization error: {e}")
+        if "token length exceeds" in str(e).lower():
+            raise HTTPException(
+                status_code=400,
+                detail="Text is too long. Try with a shorter document or adjust chunk size."
+            )
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )

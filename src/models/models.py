@@ -8,6 +8,8 @@ from langchain_ollama import ChatOllama
 from langchain_openai import OpenAI
 from langchain_openai import AzureOpenAI
 from langchain_ollama import OllamaEmbeddings  
+from transformers import AutoTokenizer
+from langchain.text_splitter import TokenTextSplitter
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +33,11 @@ class ModelManager:
 
         self.llm = None
         self.embedding_model = None
+        self.tokenizer = AutoTokenizer.from_pretrained("gpt2")  # or another appropriate tokenizer
+        self.text_splitter = TokenTextSplitter(
+            chunk_size=1000,  # slightly less than max tokens
+            chunk_overlap=100
+        )
         
         if self.config['llm_provider'] == 'groq':
             self.load_llm_groq()
@@ -154,6 +161,34 @@ class ModelManager:
             return num_tokens
         except Exception as e:
             logger.error("Error counting tokens: %s", e)
+            raise
+
+    def safe_invoke(self, prompt):
+        """
+        Safely invoke the LLM by splitting text if needed.
+        """
+        try:
+            # Split the prompt if it's too long
+            chunks = self.text_splitter.split_text(prompt)
+            
+            if len(chunks) == 1:
+                # If only one chunk, process normally
+                return self.llm.invoke(prompt).content
+            
+            # If multiple chunks, process each and combine
+            responses = []
+            for chunk in chunks:
+                response = self.llm.invoke(chunk).content
+                responses.append(response)
+            
+            # Combine responses with a final summarization
+            combined_response = " ".join(responses)
+            final_prompt = f"Combine and summarize these related pieces: {combined_response}"
+            
+            return self.llm.invoke(final_prompt).content
+            
+        except Exception as e:
+            logger.error(f"Error in safe_invoke: {e}")
             raise
 
 

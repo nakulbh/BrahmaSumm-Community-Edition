@@ -23,11 +23,9 @@ find_suitable_theme_prompt_multiple: |
     {first_representative_chunk}
     Resonse must be in JSON and we will process the data in JSON in downstream code. 
     No other data formats are accepted and don't insert any other code.
-        
 
 create_summary_prompt: |
-  Summarize this content in a fairly detailed manner without oversimplification {combined_content} 
-  The output must be in HTML format not in markdown. Keep a simple HTML structure that can be reportlab
-  pdf generator can understand. Do not return any other text. Where possible quote the author and give a
-  final analysis of the content. If it is a political article, analyze the truths in the statement too
-  with a final takeaway.
+  Summarize concisely (max 500 words):
+  {combined_content}
+
+  Format in simple HTML. Include key points and insights only.
