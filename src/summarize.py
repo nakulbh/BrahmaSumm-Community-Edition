@@ -7,9 +7,16 @@ from doc_loaders.doc_loader import DocumentLoader
 from clustering.clustering import ClusterManager
 from visualize.visualize import Visualizer
 from outputs.report_generate import create_final_report
+from fastapi import FastAPI, HTTPException
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+app = FastAPI()
+
+class SummaryRequest():
+    url: str
+    source_type: str = "web"  # default to "web"
 
 class Summarizer:
     def __init__(self, config_path):
@@ -227,6 +234,21 @@ class Summarizer:
         return themes, cluster_content
       
 
+@app.post("/summarize")
+async def summarize_content(request: SummaryRequest):
+    try:
+        config_path = 'config/config.yaml'
+        summarizer = Summarizer(config_path)
+        
+        data = summarizer(request.url, request.source_type)
+        
+        return {
+            "status": "success",
+            "data": data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
 def main():
     config_path = 'config/config.yaml'
     summarizer = Summarizer(config_path)
@@ -243,6 +265,3 @@ def main():
 
     chunk_words, total_chunks, total_words, total_tokens, tokens_sent_tokens = summarizer.get_analysis()
     print(f"Total chunks: {total_chunks}\n Total words: {total_words}\n Total tokens in original text: {total_tokens}\n Total tokens sent to LLM: {tokens_sent_tokens}")
-
-if __name__ == "__main__":
-    main()
