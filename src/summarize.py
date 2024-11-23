@@ -92,11 +92,11 @@ class Summarizer:
                 output_image='reports/umap_clusters.png'
             )
 
-            # Step 6: Generate the final summary using LLM with safe invocation
+            # Step 6: Generate the final summary using LLM
             logger.info("Creating the final summary...")
             self.combined_content = " ".join(cluster_content.values())
             prompt = self.prompts['create_summary_prompt'].format(
-                combined_content=self.combined_content
+                combined_content=self.combined_content[:4000]  # Limit content length
             )
             
             final_summary = self.model_manager.safe_invoke(prompt)
@@ -125,7 +125,7 @@ class Summarizer:
             logger.error(f"Error in summarizer: {e}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Summarization failed: {str(e)}"
+                detail=str(e)
             )
 
     def get_analysis(self):

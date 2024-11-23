@@ -7,8 +7,8 @@ token_limit: 1000
 target_words: 100
 chunk_flexbility: 0.25
 
-n_clusters: 13
-embed_batch_size: 25
+n_clusters: 5
+embed_batch_size: 10
 n_closest_representatives: 3
 
 asr_model: "whister tiny"
