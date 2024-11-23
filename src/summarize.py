@@ -8,13 +8,14 @@ from clustering.clustering import ClusterManager
 from visualize.visualize import Visualizer
 from outputs.report_generate import create_final_report
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-class SummaryRequest():
+class SummaryRequest(BaseModel):
     url: str
     source_type: str = "web"  # default to "web"
 
@@ -248,20 +249,3 @@ async def summarize_content(request: SummaryRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
-def main():
-    config_path = 'config/config.yaml'
-    summarizer = Summarizer(config_path)
-    print(summarizer.find_suitable_theme("Who is John Galt!"))
-
-    data = summarizer('https://medium.com/@balajivis/whats-so-challenging-about-building-chatbots-drawing-lessons-from-the-trenches-1ca7343c6e3d',"web")
-    # data = summarizer('https://abc7.com/read-harris-trump-presidential-debate-transcript/15289001/','web')
-    # data = summarizer('https://www.whitehouse.gov/state-of-the-union-2024/',"web")
-    #data = summarizer('https://d18rn0p25nwr6d.cloudfront.net/CIK-0001921963/77018dae-bae9-4c33-8eaf-fa6685991719.pdf',"pdf")
-    
-    create_final_report(data,report_path='reports/final_report.pdf')
-    
-    print(data["summary"])
-
-    chunk_words, total_chunks, total_words, total_tokens, tokens_sent_tokens = summarizer.get_analysis()
-    print(f"Total chunks: {total_chunks}\n Total words: {total_words}\n Total tokens in original text: {total_tokens}\n Total tokens sent to LLM: {tokens_sent_tokens}")
