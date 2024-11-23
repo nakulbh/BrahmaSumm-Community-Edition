@@ -7,6 +7,7 @@ from langchain_community.embeddings import OllamaEmbeddings
 from langchain_ollama import ChatOllama
 from langchain_openai import OpenAI
 from langchain_openai import AzureOpenAI
+from langchain_ollama import OllamaEmbeddings  
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
