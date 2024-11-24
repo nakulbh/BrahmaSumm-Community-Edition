@@ -10,6 +10,8 @@ from langchain_openai import AzureOpenAI
 from langchain_ollama import OllamaEmbeddings  
 from transformers import AutoTokenizer
 from langchain.text_splitter import TokenTextSplitter
+from typing import Dict, Any
+import tiktoken
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -33,7 +35,13 @@ class ModelManager:
 
         self.llm = None
         self.embedding_model = None
-        self.tokenizer = AutoTokenizer.from_pretrained("gpt2")  # or another appropriate tokenizer
+        try:
+            self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        except:
+            self.tokenizer = tiktoken.encoding_for_model("gpt-3.5-turbo")
+        
+        self.max_tokens = 1000  # Conservative limit
+        
         self.text_splitter = TokenTextSplitter(
             chunk_size=1000,  # slightly less than max tokens
             chunk_overlap=100
@@ -145,23 +153,48 @@ class ModelManager:
                 raise
         return self.embedding_model
 
-    def count_tokens(self, text):
+    def count_tokens_safely(self, text: str) -> int:
         """
-        Counts the number of tokens in the given text using the Groq LLM.
-        :param text: The text to count tokens for.
-        :return: Number of tokens in the text.
+        Safely count tokens with fallback options.
         """
-        if not self.llm:
-            logger.warning("Groq LLM model is not loaded. Loading the model first...")
-            self.load_llm_groq()
-        
         try:
-            num_tokens = self.llm.get_num_tokens(text)
-            logger.info("Successfully counted %d tokens for the given text.", num_tokens)
-            return num_tokens
+            return len(self.tokenizer.encode(text))
         except Exception as e:
-            logger.error("Error counting tokens: %s", e)
-            raise
+            logger.warning(f"Error in primary token counting: {e}")
+            try:
+                # Fallback to simple estimation
+                return len(text.split()) * 1.3
+            except:
+                return 0
+
+    def process_text_in_chunks(self, text: str) -> Dict[str, Any]:
+        """
+        Process text in chunks and return token statistics.
+        """
+        chunks = []
+        current_chunk = ""
+        current_tokens = 0
+        total_tokens = 0
+        
+        for sentence in text.split('. '):
+            sentence_tokens = self.count_tokens_safely(sentence)
+            if current_tokens + sentence_tokens > self.max_tokens:
+                chunks.append(current_chunk)
+                current_chunk = sentence
+                current_tokens = sentence_tokens
+            else:
+                current_chunk += '. ' + sentence if current_chunk else sentence
+                current_tokens += sentence_tokens
+            total_tokens += sentence_tokens
+            
+        if current_chunk:
+            chunks.append(current_chunk)
+            
+        return {
+            "chunks": chunks,
+            "total_tokens": total_tokens,
+            "num_chunks": len(chunks)
+        }
 
     def safe_invoke(self, prompt):
         """

@@ -94,14 +94,28 @@ class Summarizer:
 
             # Step 6: Generate the final summary using LLM
             logger.info("Creating the final summary...")
-            self.combined_content = " ".join(cluster_content.values())
-            prompt = self.prompts['create_summary_prompt'].format(
-                combined_content=self.combined_content[:4000]  # Limit content length
-            )
             
-            final_summary = self.model_manager.safe_invoke(prompt)
+            # Process content in chunks
+            content_stats = self.model_manager.process_text_in_chunks(self.combined_content)
+            chunks = content_stats["chunks"]
             
-            # Step 7: Perform analysis on the document
+            summaries = []
+            for chunk in chunks:
+                prompt = self.prompts['create_summary_prompt'].format(combined_content=chunk)
+                summary = self.model_manager.llm.invoke(prompt).content
+                summaries.append(summary)
+            
+            # Combine summaries if needed
+            if len(summaries) > 1:
+                combine_prompt = self.prompts.get('combine_summaries_prompt', 
+                    "Combine these summaries into a coherent whole: {summaries}")
+                final_summary = self.model_manager.llm.invoke(
+                    combine_prompt.format(summaries=" ".join(summaries))
+                ).content
+            else:
+                final_summary = summaries[0]
+
+            # Step 7: Perform analysis
             chunk_words, total_chunks, total_words, total_tokens, tokens_sent_tokens = self.get_analysis()
 
             # Step 8: Populate the data dictionary
@@ -130,17 +144,26 @@ class Summarizer:
 
     def get_analysis(self):
         """
-        Provides detailed analysis of the processed document, including chunk sizes, total tokens, and word counts.
-
-        :return: Tuple containing chunk words, total chunks, total words, total tokens, and tokens sent to LLM
+        Get analysis of the document including word and token counts.
         """
-        total_tokens = self.model_manager.count_tokens(self.processed_text)
-        chunk_words = self.chunk_manager.get_word_count_per_chunk()
-        total_chunks = self.chunk_manager.get_total_chunks()
-        total_words = self.chunk_manager.get_total_words()
-        tokens_sent_tokens = self.model_manager.count_tokens(self.combined_content)
-        
-        return chunk_words, total_chunks, total_words, total_tokens, tokens_sent_tokens
+        try:
+            # Get word counts for each chunk
+            chunk_words = [len(chunk.split()) for chunk in self.chunk_manager.get_chunks()]
+            total_chunks = len(chunk_words)
+            total_words = sum(chunk_words)
+            
+            # Process text with new token counter
+            text_stats = self.model_manager.process_text_in_chunks(self.processed_text)
+            total_tokens = text_stats["total_tokens"]
+            
+            # Calculate tokens sent to LLM
+            tokens_sent_stats = self.model_manager.process_text_in_chunks(self.combined_content)
+            tokens_sent_tokens = tokens_sent_stats["total_tokens"]
+            
+            return chunk_words, total_chunks, total_words, total_tokens, tokens_sent_tokens
+        except Exception as e:
+            logger.error(f"Error in analysis: {e}")
+            return [], 0, 0, 0, 0
 
     def find_suitable_theme(self, chunk_text):
         """

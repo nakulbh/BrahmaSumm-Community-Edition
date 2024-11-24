@@ -29,3 +29,9 @@ create_summary_prompt: |
   {combined_content}
 
   Format in simple HTML. Include key points and insights only.
+
+combine_summaries_prompt: |
+  Combine these related summaries into a single coherent summary:
+  {summaries}
+
+  Keep the final summary concise and well-structured.
