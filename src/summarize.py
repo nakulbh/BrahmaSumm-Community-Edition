@@ -92,11 +92,12 @@ class Summarizer:
                 output_image='reports/umap_clusters.png'
             )
 
-            # Step 6: Generate the final summary using LLM
+            # Step 6: Generate the final summary using LLM - Updated to handle token limits
             logger.info("Creating the final summary...")
-            self.combined_content = " ".join(cluster_content.values())
+            max_tokens = 3000  # Set a safe limit below model's context window
+            truncated_content = self.truncate_to_token_limit(self.combined_content, max_tokens)
             prompt = self.prompts['create_summary_prompt'].format(
-                combined_content=self.combined_content[:4000]  # Limit content length
+                combined_content=truncated_content
             )
             
             final_summary = self.model_manager.safe_invoke(prompt)
@@ -244,6 +245,31 @@ class Summarizer:
         print(themes)
         return themes, cluster_content
       
+    def truncate_to_token_limit(self, text: str, max_tokens: int) -> str:
+        """
+        Truncates text to stay within token limit while maintaining coherent sentences.
+        
+        :param text: Input text to truncate
+        :param max_tokens: Maximum number of tokens allowed
+        :return: Truncated text
+        """
+        current_tokens = self.model_manager.count_tokens(text)
+        if current_tokens <= max_tokens:
+            return text
+        
+        # Split into sentences and gradually build up until we reach token limit
+        sentences = text.split('. ')
+        truncated = []
+        current_text = ""
+        
+        for sentence in sentences:
+            test_text = current_text + sentence + '. '
+            if self.model_manager.count_tokens(test_text) > max_tokens:
+                break
+            current_text = test_text
+            truncated.append(sentence)
+        
+        return '. '.join(truncated)
 
 @app.post("/summarize")
 async def summarize_content(request: SummaryRequest):
