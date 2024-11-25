@@ -92,16 +92,27 @@ class Summarizer:
                 output_image='reports/umap_clusters.png'
             )
 
-            # Step 6: Generate the final summary using LLM - Updated to handle token limits
+            # Step 6: Generate the final summary using LLM - Updated with better token handling
             logger.info("Creating the final summary...")
-            max_tokens = 3000  # Set a safe limit below model's context window
+            max_tokens = 1000  # Reduced from 3000 to stay well within limits
             truncated_content = self.truncate_to_token_limit(self.combined_content, max_tokens)
+            
+            # Split the content into smaller chunks if needed
             prompt = self.prompts['create_summary_prompt'].format(
                 combined_content=truncated_content
             )
             
-            final_summary = self.model_manager.safe_invoke(prompt)
-            
+            try:
+                final_summary = self.model_manager.safe_invoke(prompt)
+            except Exception as e:
+                logger.warning(f"Error in initial summary attempt: {e}")
+                # Fallback to an even shorter limit if the first attempt fails
+                truncated_content = self.truncate_to_token_limit(self.combined_content, 500)
+                prompt = self.prompts['create_summary_prompt'].format(
+                    combined_content=truncated_content
+                )
+                final_summary = self.model_manager.safe_invoke(prompt)
+
             # Step 7: Perform analysis on the document
             chunk_words, total_chunks, total_words, total_tokens, tokens_sent_tokens = self.get_analysis()
 
@@ -247,11 +258,7 @@ class Summarizer:
       
     def truncate_to_token_limit(self, text: str, max_tokens: int) -> str:
         """
-        Truncates text to stay within token limit while maintaining coherent sentences.
-        
-        :param text: Input text to truncate
-        :param max_tokens: Maximum number of tokens allowed
-        :return: Truncated text
+        Enhanced version of truncate_to_token_limit with better handling of long texts.
         """
         current_tokens = self.model_manager.count_tokens(text)
         if current_tokens <= max_tokens:
@@ -264,12 +271,25 @@ class Summarizer:
         
         for sentence in sentences:
             test_text = current_text + sentence + '. '
-            if self.model_manager.count_tokens(test_text) > max_tokens:
+            test_tokens = self.model_manager.count_tokens(test_text)
+            
+            if test_tokens > max_tokens:
+                if not truncated:  # If we haven't added any sentences yet, add a truncated version
+                    words = sentence.split()
+                    for i in range(len(words)):
+                        test_text = ' '.join(words[:i+1]) + '.'
+                        if self.model_manager.count_tokens(test_text) > max_tokens:
+                            break
+                        current_text = test_text
+                    truncated.append(current_text)
                 break
+            
             current_text = test_text
             truncated.append(sentence)
         
-        return '. '.join(truncated)
+        result = '. '.join(truncated)
+        logger.info(f"Truncated text from {current_tokens} to {self.model_manager.count_tokens(result)} tokens")
+        return result
 
 @app.post("/summarize")
 async def summarize_content(request: SummaryRequest):

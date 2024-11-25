@@ -165,31 +165,54 @@ class ModelManager:
 
     def safe_invoke(self, prompt):
         """
-        Safely invoke the LLM by splitting text if needed.
+        Enhanced safe_invoke with better error handling and chunking.
         """
         try:
-            # Split the prompt if it's too long
+            # First try: direct invocation with token check
+            if self.count_tokens(prompt) <= 1000:  # Safe limit for most models
+                return self.llm.invoke(prompt).content
+            
+            # If too long, split and process in chunks
             chunks = self.text_splitter.split_text(prompt)
             
             if len(chunks) == 1:
-                # If only one chunk, process normally
-                return self.llm.invoke(prompt).content
+                return self.llm.invoke(chunks[0]).content
             
-            # If multiple chunks, process each and combine
+            # Process multiple chunks
             responses = []
             for chunk in chunks:
+                if self.count_tokens(chunk) > 1000:
+                    # If chunk is still too long, take first part
+                    chunk = self.truncate_text(chunk, 800)  # Leave room for prompt
                 response = self.llm.invoke(chunk).content
                 responses.append(response)
             
             # Combine responses with a final summarization
             combined_response = " ".join(responses)
-            final_prompt = f"Combine and summarize these related pieces: {combined_response}"
+            if self.count_tokens(combined_response) > 800:
+                combined_response = self.truncate_text(combined_response, 800)
             
+            final_prompt = f"Combine and summarize these related pieces concisely: {combined_response}"
             return self.llm.invoke(final_prompt).content
             
         except Exception as e:
             logger.error(f"Error in safe_invoke: {e}")
             raise
+
+    def truncate_text(self, text: str, max_tokens: int) -> str:
+        """
+        Utility method to truncate text to a specific token count.
+        """
+        words = text.split()
+        current_text = ""
+        
+        for word in words:
+            test_text = current_text + " " + word
+            if self.count_tokens(test_text) > max_tokens:
+                break
+            current_text = test_text
+        
+        return current_text.strip()
 
 
 # Main function for testing the ModelManager class
